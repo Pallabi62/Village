@@ -1,0 +1,7 @@
+node_modules/
+backend/node_modules/
+frontend/node_modules/
+frontend/dist/
+__pycache__/
+demo_client/node_modules/
+demo_client/dist/

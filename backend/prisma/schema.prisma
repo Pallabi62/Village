@@ -1,0 +1,110 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+// Looking for ways to speed up your queries, or scale easily with your serverless or edge functions?
+// Try Prisma Accelerate: https://pris.ly/cli/accelerate-init
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Country {
+  id     Int      @id @default(autoincrement())
+  code   String   @unique
+  name   String
+  states State[]
+}
+
+model State {
+  id        Int       @id @default(autoincrement())
+  code      String    @unique
+  name      String
+  countryId Int
+  country   Country   @relation(fields: [countryId], references: [id])
+  districts District[]
+  userAccess UserStateAccess[]
+}
+
+model District {
+  id           Int           @id @default(autoincrement())
+  code         String
+  name         String
+  stateId      Int
+  state        State         @relation(fields: [stateId], references: [id])
+  subDistricts SubDistrict[]
+
+  @@index([stateId])
+}
+
+model SubDistrict {
+  id         Int        @id @default(autoincrement())
+  code       String
+  name       String
+  districtId Int
+  district   District   @relation(fields: [districtId], references: [id])
+  villages   Village[]
+
+  @@index([districtId])
+}
+
+model Village {
+  id            Int         @id @default(autoincrement())
+  code          String      @unique
+  name          String
+  subDistrictId Int
+  subDistrict   SubDistrict @relation(fields: [subDistrictId], references: [id])
+  status        String      @default("ACTIVE")
+  createdAt     DateTime    @default(now())
+  updatedAt     DateTime    @updatedAt
+
+  @@index([name]) // Consider using a raw trigram index in a migration
+  @@index([subDistrictId])
+}
+
+model User {
+  id        Int               @id @default(autoincrement())
+  email     String            @unique
+  password  String
+  planType  String            @default("FREE")
+  apiKeys   ApiKey[]
+  stateAccess UserStateAccess[]
+  apiLogs   ApiLog[]
+}
+
+model ApiKey {
+  id        Int      @id @default(autoincrement())
+  key       String   @unique
+  secretHash String
+  userId    Int
+  user      User     @relation(fields: [userId], references: [id])
+  apiLogs   ApiLog[]
+
+  @@index([key])
+}
+
+model UserStateAccess {
+  id      Int   @id @default(autoincrement())
+  userId  Int
+  stateId Int
+  user    User  @relation(fields: [userId], references: [id])
+  state   State @relation(fields: [stateId], references: [id])
+
+  @@unique([userId, stateId])
+}
+
+model ApiLog {
+  id           Int      @id @default(autoincrement())
+  endpoint     String
+  responseTime Int
+  createdAt    DateTime @default(now())
+  userId       Int
+  user         User     @relation(fields: [userId], references: [id])
+  apiKeyId     Int
+  apiKey       ApiKey   @relation(fields: [apiKeyId], references: [id])
+
+  @@index([createdAt, userId])
+}
