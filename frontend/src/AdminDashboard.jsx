@@ -10,9 +10,20 @@ const data = [
 ];
 
 export default function AdminDashboard() {
+  const handleExport = (type) => {
+    // In a real app, you would pass the JWT token here
+    window.open(`http://localhost:3000/v1/admin/export/${type}`, '_blank');
+  };
+
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-semibold text-gray-800">Dashboard Analytics</h1>
+      <div className="flex justify-between items-center">
+        <h1 className="text-2xl font-semibold text-gray-800">Dashboard Analytics</h1>
+        <div className="space-x-3">
+          <button onClick={() => handleExport('csv')} className="bg-white border border-gray-300 px-4 py-2 rounded text-sm hover:bg-gray-50">Download CSV</button>
+          <button onClick={() => handleExport('json')} className="bg-white border border-gray-300 px-4 py-2 rounded text-sm hover:bg-gray-50">Download JSON</button>
+        </div>
+      </div>
 
       {/* Metrics Row */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-4">

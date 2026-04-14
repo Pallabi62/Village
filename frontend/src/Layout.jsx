@@ -1,6 +1,6 @@
 import React from 'react';
 
-export default function Layout({ children }) {
+export default function Layout({ children, setRoute }) {
   return (
     <div className="flex h-screen bg-gray-100 font-sans">
       {/* Sidebar */}
@@ -11,6 +11,8 @@ export default function Layout({ children }) {
           <a href="#" className="block py-2 px-3 rounded hover:bg-slate-700">User Management</a>
           <a href="#" className="block py-2 px-3 rounded hover:bg-slate-700">Village Master List</a>
           <a href="#" className="block py-2 px-3 rounded hover:bg-slate-700">API Logs Viewer</a>
+          <div className="pt-8 text-xs text-gray-400 uppercase tracking-wider mb-2">B2B Portal</div>
+          <a href="#" onClick={(e) => { e.preventDefault(); window.history.pushState({}, '', '/register'); setRoute('/register'); }} className="block py-2 px-3 rounded hover:bg-slate-700">Register API Key</a>
         </nav>
       </div>
 

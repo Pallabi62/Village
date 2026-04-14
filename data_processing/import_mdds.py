@@ -62,6 +62,17 @@ def import_mdds_data(file_path):
         # In a full implementation, we would extract unique States, Districts, etc.,
         # and batch insert them using psycopg2's execute_values to optimize for performance.
 
+        # Example chunked insertion logic for Villages
+        # villages_data = [(row['MDDS PLCN'], row['Area Name'], sub_dist_id) for row in df.itertuples()]
+        # chunk_size = 5000
+        # for i in range(0, len(villages_data), chunk_size):
+        #     chunk = villages_data[i:i + chunk_size]
+        #     execute_values(cursor, """
+        #         INSERT INTO "Village" (code, name, "subDistrictId") VALUES %s
+        #         ON CONFLICT (code) DO NOTHING
+        #     """, chunk)
+        #     print(f"Inserted chunk {i//chunk_size + 1}")
+
         print("Data imported successfully (stub implementation executed).")
         conn.commit()
 

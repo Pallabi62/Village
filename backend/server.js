@@ -19,22 +19,71 @@ const limiter = rateLimit({
 });
 app.use('/v1', limiter);
 
+const bcrypt = require('bcrypt');
+
+const jwt = require('jsonwebtoken');
+
+// Exclude these domains from registration
+const FREE_EMAIL_DOMAINS = ['gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com'];
+
+// JWT Auth Middleware for Dashboard
+const authenticateJWT = (req, res, next) => {
+    const authHeader = req.headers.authorization;
+    if (authHeader) {
+        const token = authHeader.split(' ')[1];
+        jwt.verify(token, process.env.JWT_SECRET || 'fallback_secret', (err, user) => {
+            if (err) {
+                return res.sendStatus(403);
+            }
+            req.user = user;
+            next();
+        });
+    } else {
+        res.sendStatus(401);
+    }
+};
+
 // Auth Middleware for X-API-Key and X-API-Secret
 const authenticateApiKey = async (req, res, next) => {
+    // Allow demo endpoint to bypass strict DB check for demonstration purposes,
+    // if using the specific demo key mentioned in specs.
     const apiKey = req.headers['x-api-key'];
     if (!apiKey) {
         return res.status(401).json(formatError('INVALID_API_KEY', 'API key missing or invalid'));
     }
 
-    // Check if it's a write operation (POST, PUT, DELETE, PATCH)
-    if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
-        const apiSecret = req.headers['x-api-secret'];
-        if (!apiSecret) {
-            return res.status(401).json(formatError('INVALID_API_KEY', 'API secret missing or invalid for write operation'));
-        }
+    if (apiKey === 'demo_public_key_for_presentations') {
+        req.user = { planType: 'FREE' }; // Demo context
+        return next();
     }
 
-    next();
+    try {
+        const keyRecord = await prisma.apiKey.findUnique({
+            where: { key: apiKey },
+            include: { user: true }
+        });
+
+        if (!keyRecord) {
+            return res.status(401).json(formatError('INVALID_API_KEY', 'API key missing or invalid'));
+        }
+
+        // Check if it's a write operation (POST, PUT, DELETE, PATCH)
+        if (['POST', 'PUT', 'DELETE', 'PATCH'].includes(req.method)) {
+            const apiSecret = req.headers['x-api-secret'];
+            if (!apiSecret) {
+                return res.status(401).json(formatError('INVALID_API_KEY', 'API secret missing or invalid for write operation'));
+            }
+            const match = await bcrypt.compare(apiSecret, keyRecord.secretHash);
+            if (!match) {
+                return res.status(401).json(formatError('INVALID_API_KEY', 'Invalid API secret'));
+            }
+        }
+
+        req.user = keyRecord.user;
+        next();
+    } catch (err) {
+        return res.status(500).json(formatError('INTERNAL_ERROR', 'Database error during authentication'));
+    }
 };
 
 const formatResponse = (req, data, startTime) => {
@@ -62,7 +111,92 @@ const formatError = (code, description) => {
     };
 };
 
-app.use('/v1', authenticateApiKey);
+// ==========================================
+// Auth / Dashboard Routes
+// ==========================================
+
+app.post('/v1/auth/register', async (req, res) => {
+    const { email, password, businessName, phone } = req.body;
+
+    if (!email || !password || !businessName) {
+        return res.status(400).json(formatError('INVALID_INPUT', 'Missing required fields'));
+    }
+
+    const domain = email.split('@')[1];
+    if (FREE_EMAIL_DOMAINS.includes(domain)) {
+        return res.status(400).json(formatError('INVALID_EMAIL', 'Free email providers are not allowed. Please use a business email.'));
+    }
+
+    try {
+        const hashedPassword = await bcrypt.hash(password, 10);
+        const newUser = await prisma.user.create({
+            data: {
+                email,
+                password: hashedPassword,
+                planType: 'PENDING_APPROVAL'
+            }
+        });
+
+        res.status(201).json({ success: true, message: 'Registration submitted. Awaiting admin approval.' });
+    } catch (err) {
+        res.status(500).json(formatError('INTERNAL_ERROR', 'Failed to register user. Email might be taken.'));
+    }
+});
+
+app.post('/v1/auth/login', async (req, res) => {
+    const { email, password } = req.body;
+    try {
+        const user = await prisma.user.findUnique({ where: { email } });
+        if (!user || !(await bcrypt.compare(password, user.password))) {
+            return res.status(401).json(formatError('AUTH_FAILED', 'Invalid credentials'));
+        }
+
+        const token = jwt.sign(
+            { id: user.id, email: user.email, planType: user.planType },
+            process.env.JWT_SECRET || 'fallback_secret',
+            { expiresIn: '24h' }
+        );
+        res.json({ success: true, token });
+    } catch (err) {
+        res.status(500).json(formatError('INTERNAL_ERROR', 'Login failed'));
+    }
+});
+
+// Exclude routes from API Key authentication
+app.use((req, res, next) => {
+    if (req.path.startsWith('/v1/auth') || req.path.startsWith('/v1/admin/export')) {
+        return next();
+    }
+    authenticateApiKey(req, res, next);
+});
+
+// Admin Exports (Requires JWT)
+app.get('/v1/admin/export/json', authenticateJWT, async (req, res) => {
+    // Basic export stub, in a real app we'd stream large JSON
+    try {
+        const data = await prisma.state.findMany({ include: { districts: true } });
+        res.setHeader('Content-disposition', 'attachment; filename=export.json');
+        res.setHeader('Content-type', 'application/json');
+        res.send(JSON.stringify(data));
+    } catch (err) {
+        res.status(500).send('Export failed');
+    }
+});
+
+app.get('/v1/admin/export/csv', authenticateJWT, async (req, res) => {
+    // Basic CSV stub
+    try {
+        const data = await prisma.state.findMany();
+        let csv = 'ID,Code,Name\n';
+        data.forEach(s => csv += `${s.id},${s.code},${s.name}\n`);
+
+        res.setHeader('Content-disposition', 'attachment; filename=export.csv');
+        res.setHeader('Content-type', 'text/csv');
+        res.send(csv);
+    } catch (err) {
+        res.status(500).send('Export failed');
+    }
+});
 
 // ==========================================
 // API v1 Routes (Hierarchical Data Fetching)
